@@ -293,6 +293,7 @@ export class GoGame {
 					}
 				}
 				await this.state.storage.put("game", game)
+				this.updateTimeout();
 			}
 
 			await this.handleSession(pair[1], game, pid);
@@ -339,9 +340,14 @@ export class GoGame {
 				return // Not a legal move
 			}
 
-			await this.state.storage.put("game", game)
-			this.broadcast(game.board)
+			await this.state.storage.put("game", game);
+			this.broadcast(game.board);
+			this.updateTimeout();
 		}
+	}
+
+	updateTimeout() {
+		this.setAlarm(new Date((new Date()).getTime() + 86400000)) // Set alarm to now + 24h
 	}
 
   webSocketClose(ws) {
@@ -360,6 +366,10 @@ export class GoGame {
 
 			}
     });
+	}
+
+	async alarm() {
+		await this.state.storage.deleteAll();
 	}
 
 }

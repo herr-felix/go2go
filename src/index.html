@@ -30,7 +30,7 @@
             color: white;
             text-shadow: #111 1px 0 10px;
         }
-        #new-game, #game {
+        #new-game, #game, #pass {
             display: none;
         }
     </style>
@@ -252,7 +252,7 @@ class Goban {
 	}
 
 	get hasPassed() {
-		return this.playing >> 7 === 1;
+		return this.playing >> 7 === 1 || this.playing === OUT;
 	}
 
 	setState (dv) {
@@ -260,7 +260,7 @@ class Goban {
 		this.playing = dv.getUint8(0);
 		this.lines = dv.getUint8(5);
 		// Only play when the board is loaded and the other player is playing
-		if (this.board && (this.color === EMPTY || this.color == (this.playing & 3)) && this.hasPassed) {
+		if (this.board && (this.color === EMPTY || this.color == (this.playing & 3)) && !this.hasPassed) {
 			playSound.play()
 		}
 		this.board = new Uint8Array(dv.buffer.slice(6))
