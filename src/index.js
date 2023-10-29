@@ -101,13 +101,13 @@ class Goban {
 		return true
 	}
 
+	get playingColor() {
+		return this.board.getUint8(0) & 3;
+	}
+
 	getGroup (start) {
 		let color = this.at(start)
 		let cluster = new Set()
-
-		if (!(color == BLACK || color == WHITE)) {
-			return cluster
-		}
 
 		let q = [];
 		q.push(start)
@@ -152,15 +152,50 @@ class Goban {
 		this.board.setUint8(idx + this.offset, color)
 	}
 
+	markAs(pos, playerColor) {
+		console.log('marking')
+		let current = this.at(pos);
+		let currentColor = (current & 3);
+		let currentMark = (current >> 2);
+
+		var newMark = (playerColor << 2) | currentColor;
+
+		// Can't mark your own stones, only unmark them
+	  if (currentMark === playerColor) {
+			newMark = currentColor
+		} else if (currentColor === playerColor) {
+			newMark = currentColor
+		}
+
+		for (let marked of this.getGroup(pos).values()) {
+			this.setAt(marked, newMark);
+		}
+
+		return true;
+	}
+
 	play (pos, color) {
+	  if (pos > this.size || pos < 0) {
+			if (color >> 7) { // Is the "PASSED" bit set?
+				// Previous turn was passed. This turn also. THE GAME IS OVER!
+				this.board.setUint8(0, OUT) // When the playing color is OUT, it means that the game is over and the players are counting points
+			} else {
+				this.board.setUint8(0, 0x80 | color ^ 3)
+			}
+			return true; // This is "passing"
+		}
+
+		// Remove the "passed" flag
+		color = color & 3;
+
 		//# Can only play on empty positions
-		if (this.at(pos) !== EMPTY || pos > this.size || pos < 0) {
-			return -1
+		if (this.at(pos) !== EMPTY) {
+			return false;
 		}
 
 		let captured = new Set()
 		let alive = new Set()
-		let op_color = color ^ 2 + 1;
+		let op_color = color ^ 3;
 
 		this.setAt(pos, color);
 
@@ -182,8 +217,7 @@ class Goban {
 
 		// Group is dead and have no captured? Not a valid move
 		if (captured.size == 0 && this.isGroupDead(this.getGroup(pos))) {
-			this.setAt(pos, EMPTY) // Restore
-			return -1 // No a valid move
+			return false // No a valid move
 		}
 
 		// Remove captured
@@ -199,9 +233,9 @@ class Goban {
 			}
 		}
 
-		this.board.setUint8(0, color ^ 2 + 1)
+		this.board.setUint8(0, color ^ 3)
 
-		return captured.size
+		return true
 	}
 
 }
@@ -287,14 +321,21 @@ export class GoGame {
 
 	async webSocketMessage(ws, msg) {
 		let dv = new DataView(msg);
-		let color = dv.getUint8(0);
+		let playerColor = ws.deserializeAttachment()
 
-		if (color == ws.deserializeAttachment()) {
-			let pos = dv.getUint16(1, true);
+		if (playerColor) {
 			let game = await this.state.storage.get("game")
 			let goban = new Goban(game.board)
 
-			if (goban.play(pos, color) < 0) {
+			let pos = dv.getUint16(1, true);
+			let color = dv.getUint8(0);
+
+			if (color === OUT) {
+				// We are counting points
+				if (!goban.markAs(pos, playerColor)) {
+					return // They are trying to count their own stones are prisonners?
+				}
+			} else if (!((color & 3) === playerColor && goban.playingColor === playerColor) || !goban.play(pos, color)) {
 				return // Not a legal move
 			}
 

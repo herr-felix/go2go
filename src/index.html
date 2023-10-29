@@ -54,6 +54,8 @@
        <div id="game">
            <span id="black"></span> - <span id="white"></span>
            <canvas height="500" width="500" id="canvas"></canvas>
+					 <button id="pid" onclick="changeUID()">Change player ID</button>
+					 <button id="pass">Pass</button>
        </div>
    </div>
    <script>
@@ -61,246 +63,372 @@
 const EMPTY = 0;
 const BLACK = 1;
 const WHITE = 2;
+const OUT = 3;
+
+const BTN_PASS = document.getElementById('pass');
 
 class Goban {
-    constructor (canvas, size_px) {
-        this.ctx = canvas.getContext("2d");
-        this.size = size_px;
-        this.lines = 0;
-        this.color = EMPTY;
-        this.playing = EMPTY;
+	constructor (canvas, size_px) {
+		this.ctx = canvas.getContext("2d");
+		this.size = size_px;
+		this.lines = 0;
+		this.color = EMPTY;
+		this.playing = EMPTY;
 
-        canvas.onmousemove = e => {
-            var rect = e.target.getBoundingClientRect();
-            this.moveGhost(e.clientX - rect.left, e.clientY - rect.top);
-        }
+		canvas.onmousemove = e => {
+			var rect = e.target.getBoundingClientRect();
+			this.moveGhost(e.clientX - rect.left, e.clientY - rect.top);
+		}
 
-        canvas.onmouseleave = e => {
-            this.removeGhost();
-        }
+		canvas.onmouseleave = e => {
+			this.removeGhost();
+		}
 
-        canvas.onclick = e => {
-            if (this.canPlay) {
-                var rect = e.target.getBoundingClientRect();
-                let idx = this.coordsToIdx(e.clientX - rect.left, e.clientY - rect.top);
-                this.putStone(idx);
-            }
-        }
-    }
+		canvas.onclick = e => {
+			if (this.canPlay) {
+				var rect = e.target.getBoundingClientRect();
+				let idx = this.coordsToIdx(e.clientX - rect.left, e.clientY - rect.top);
+				this.putStone(idx);
+			}
+		}
+	}
 
-    get canPlay () {
-        return this.color !== EMPTY && this.color == this.playing;
-    }
+	get canPlay () {
+		return this.color !== EMPTY && (this.playing === OUT || this.color == (this.playing & 3));
+	}
 
-    get hoshis () {
-        switch(this.lines) {
-            case 19:
-                return [60, 66, 72, 174, 180, 186, 288, 294, 300];
-            case 13:
-                return [42, 48, 84, 120, 126];
-            case 9:
-                return [20, 24, 40, 56, 60];
-        }
-        return [];
-    }
+	get hoshis () {
+		switch(this.lines) {
+			case 19:
+				return [60, 66, 72, 174, 180, 186, 288, 294, 300];
+			case 13:
+				return [42, 48, 84, 120, 126];
+			case 9:
+				return [20, 24, 40, 56, 60];
+		}
+		return [];
+	}
 
-    putStone(idx) {
-        if (this.board[idx] === 0 && this.canPlay) {
-            this.onPut(idx)
-        }
-    }
+	putStone(idx) {
+		if (this.canPlay) {
+			this.onPut(idx)
+		}
+	}
 
-    coordsToIdx(x, y) {
-        return (this.lines * Math.floor(y/this.stoneSize)) + Math.floor(x/this.stoneSize);
-    }
+	coordsToIdx(x, y) {
+		return (this.lines * Math.floor(y/this.stoneSize)) + Math.floor(x/this.stoneSize);
+	}
 
-    moveGhost(x, y) {
-        let prev = this.ghost;
-        let idx = this.coordsToIdx(x, y);
-        if (prev !== idx && this.board) {
-            if (this.board[idx] === EMPTY) {
-                this.ghost = idx;
-                this.draw();
-            } else {
-                this.removeGhost();
-            }
-        }
-    }
+	moveGhost(x, y) {
+		let prev = this.ghost;
+		let idx = this.coordsToIdx(x, y);
+		if (prev !== idx && this.board) {
+			if (this.board[idx] === EMPTY) {
+				this.ghost = idx;
+				this.draw();
+			} else {
+				this.removeGhost();
+			}
+		}
+	}
 
-    removeGhost() {
-        this.ghost = null;
-        this.draw();
-    }
+	removeGhost() {
+		this.ghost = null;
+		this.draw();
+	}
 
-    get stoneSize () {
-        return this.size / this.lines
-    }
+	get stoneSize () {
+		return this.size / this.lines
+	}
 
-    draw() {
-        if (this.board === undefined || this.lines === 0) {
-            return;
-        }
+	draw() {
+		if (this.board === undefined || this.lines === 0) {
+			return;
+		}
 
-        // Goban
-        this.ctx.fillStyle = "peru";
-        this.ctx.fillRect(0, 0, this.size, this.size);
+		// Goban
+		this.ctx.fillStyle = "peru";
+		this.ctx.fillRect(0, 0, this.size, this.size);
 
-        // Lines
-        const start = this.stoneSize / 2;
-        const l = this.size - start;
+		// Lines
+		const start = this.stoneSize / 2;
+		const l = this.size - start;
 
-        this.ctx.strokeStyle = "black"
-        this.ctx.beginPath();
-        for (var x = start; x < this.size; x += this.stoneSize) {
-            // V lines
-            this.ctx.moveTo(x, start);
-            this.ctx.lineTo(x, l);
+		this.ctx.strokeStyle = "black"
+		this.ctx.beginPath();
+		for (var x = start; x < this.size; x += this.stoneSize) {
+			// V lines
+			this.ctx.moveTo(x, start);
+			this.ctx.lineTo(x, l);
 
-            // H lines
-            this.ctx.moveTo(start, x);
-            this.ctx.lineTo(l, x);
-        }
-        this.ctx.stroke();
+			// H lines
+			this.ctx.moveTo(start, x);
+			this.ctx.lineTo(l, x);
+		}
+		this.ctx.stroke();
 
-        // Hoshis
-        this.ctx.fillStyle = "black";
-        this.ctx.beginPath();
-        this.hoshis.forEach(i => {
-            if (this.board[i] === EMPTY) {
-                const size = this.stoneSize;
-                const x = size * (i % this.lines) + size/2;
-                const y = size * Math.floor(i / this.lines) + size/2;
-                this.ctx.moveTo(x, y);
-                this.ctx.arc(x-0.5, y, 3, 0, Math.PI*2, false);
-            }
-        });
-        this.ctx.fill();
+		// Hoshis
+		this.ctx.fillStyle = "black";
+		this.ctx.beginPath();
+		this.hoshis.forEach(i => {
+			if (this.board[i] === EMPTY) {
+				const size = this.stoneSize;
+				const x = size * (i % this.lines) + size/2;
+				const y = size * Math.floor(i / this.lines) + size/2;
+				this.ctx.moveTo(x, y);
+				this.ctx.arc(x-0.5, y, 3, 0, Math.PI*2, false);
+			}
+		});
+		this.ctx.fill();
 
-        // Ghost
-        if (this.ghost !== null && this.playing === this.color) {
-            this.ctx.fillStyle = this.color === WHITE ? "rgb(255, 255, 255, 0.5)" : "rgb(0, 0, 0, 0.5)";
-            this.ctx.beginPath();
-            this.drawStone(this.ghost, this.color)
-            this.ctx.fill();
-        }
+		// Ghost
+		if (this.ghost !== null && (this.playing & 3) === this.color) {
+			this.ctx.fillStyle = this.color === WHITE ? "rgb(255, 255, 255, 0.5)" : "rgb(0, 0, 0, 0.5)";
+			this.ctx.beginPath();
+			this.drawStone(this.ghost, this.color)
+			this.ctx.fill();
+		}
 
-        const total = this.lines * this.lines;
+		const total = this.lines * this.lines;
 
-        this.ctx.fillStyle = "black";
-        this.ctx.beginPath();
-        for (let i = 0; i < total; i++) {
-            if (this.board[i] === BLACK) {
-                this.drawStone(i, BLACK)
-            }
-        }
-        this.ctx.fill();
+		this.ctx.fillStyle = "black";
+		this.ctx.beginPath();
+		for (let i = 0; i < total; i++) {
+			if ((this.board[i] & 3) === BLACK) {
+				this.drawStone(i, BLACK)
+			}
+		}
+		this.ctx.fill();
 
-        // white
-        this.ctx.fillStyle = "white";
-        this.ctx.beginPath();
-        for (let i = 0; i < total; i++) {
-            if (this.board[i] === WHITE) {
-                this.drawStone(i, WHITE)
-            }
-        }
-        this.ctx.fill();
+		// white
+		this.ctx.fillStyle = "white";
+		this.ctx.beginPath();
+		for (let i = 0; i < total; i++) {
+			if ((this.board[i] & 3) === WHITE) {
+				this.drawStone(i, WHITE)
+			}
+		}
+		this.ctx.fill();
 
-    }
+		if (this.playing === OUT) {
+			this.drawPoints(total);
+		}
+	}
 
-    drawStone (idx, color) {
-        const size = this.stoneSize;
-        const x = size * (idx % this.lines) + size/2;
-        const y = size * Math.floor(idx / this.lines) + size/2;
-        this.ctx.moveTo(x, y);
-        this.ctx.arc(x, y, size/2 - 1, 0, Math.PI*2, false);
-    }
+	drawPoints (total) {
+		this.ctx.fillStyle = "black";
+		this.ctx.beginPath();
+		for (let i = 0; i < total; i++) {
+			if ((this.board[i] >> 2) === BLACK) {
+				this.drawPoint(i);
+			}
+		}
+		this.ctx.fill();
+
+		this.ctx.fillStyle = "white";
+		this.ctx.beginPath();
+		for (let i = 0; i < total; i++) {
+			if ((this.board[i] >> 2) === WHITE) {
+				this.drawPoint(i);
+			}
+		}
+		this.ctx.fill();
+	}
+
+	drawPoint(idx) {
+			const size = this.stoneSize;
+			const x = size * (idx % this.lines) + size/2;
+			const y = size * Math.floor(idx / this.lines) + size/2;
+			this.ctx.moveTo(x, y);
+			this.ctx.rect(x - 4.5, y - 4.5, 8, 8);
+	}
+
+	drawStone (idx, color) {
+		const size = this.stoneSize;
+		const x = size * (idx % this.lines) + size/2;
+		const y = size * Math.floor(idx / this.lines) + size/2;
+		this.ctx.moveTo(x, y);
+		this.ctx.arc(x, y, size/2 - 1, 0, Math.PI*2, false);
+	}
+
+	get hasPassed() {
+		return this.playing >> 7 === 1;
+	}
+
+	setState (dv) {
+		// binary frame
+		this.playing = dv.getUint8(0);
+		this.lines = dv.getUint8(5);
+		// Only play when the board is loaded and the other player is playing
+		if (this.board && (this.color === EMPTY || this.color == (this.playing & 3)) && this.hasPassed) {
+			playSound.play()
+		}
+		this.board = new Uint8Array(dv.buffer.slice(6))
+	}
+
+	get komi() {
+		return 6.5;
+	}
+
+	countPoints(dv) {
+		let black_points = dv.getUint16(1, true);
+		let white_points = dv.getUint16(3, true);
+
+		if (this.playing === OUT) {
+			const total = this.lines * this.lines;
+
+			// Count BLACK
+			for (let i = 0; i < total; i++) {
+				if ((this.board[i] >> 2) === BLACK) { // Marked as black point
+					black_points++; // One point
+					if ((this.board[i] & 3) === WHITE) { // A white stone
+						black_points++; // a prisonner
+					}
+				}
+			}
+
+			// Count WHITE
+			white_points += this.komi;
+			for (let i = 0; i < total; i++) {
+				if ((this.board[i] >> 2) === WHITE) { // Marked as white point
+					white_points++; // One point
+					if ((this.board[i] & 3) === BLACK) { // A black stone
+						white_points++; // a prisonner
+					}
+				}
+			}
+		}
+
+		return [black_points, white_points];
+	}
+
+	get pass_text() {
+		if (this.color === EMPTY || this.playing === OUT) {
+			return;
+		}
+
+		if (this.color === (this.playing & 3)) {
+			if (this.hasPassed) {
+				return 'Finish'
+			}
+			return 'Pass';
+		}
+	}
 }
 
 function getUID() {
-    var uid = localStorage.getItem("go2go_uid");
-    if (uid) {
-        return uid
-    }
-    uid = makeId()
-    localStorage.setItem("go2go_uid", uid)
-    return uid
+	var uid = localStorage.getItem("go2go_uid");
+	if (uid) {
+		return uid
+	}
+	uid = makeId()
+	localStorage.setItem("go2go_uid", uid)
+	return uid
 }
 
+function changeUID() {
+	const newUID = prompt("New Player ID", getUID());
+	if (newUID) {
+    localStorage.setItem("go2go_uid", newUID)
+	}
+}
+
+const playSound = new Audio('data:audio/ogg;base64,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');
+
 function connect(gameId) {
-    document.getElementById('game').style.display = 'block';
+	document.getElementById('game').style.display = 'block';
 
-    const canvas = document.getElementById("canvas");
-    var goban = new Goban(canvas, 500);
+	const canvas = document.getElementById("canvas");
+	var goban = new Goban(canvas, 500);
 
-		var url = `${window.location.protocol === 'https:' ? 'wss' : 'ws' }://${window.location.host}`
+	var url = `${window.location.protocol === 'https:' ? 'wss' : 'ws' }://${window.location.host}`
 
-    if (gameId) {
-			url = `${url}/${gameId}?p=${getUID()}`
-    } else {
-			const size = document.querySelector('input[name="size"]:checked').value;
-			const color = document.querySelector('input[name="color"]:checked').value;
-			document.getElementById('new-game').style.display = 'none';
-			gameId = makeId()
-			location.hash = `${gameId}`
-			url = `${url}/${gameId}?p=${getUID()}&c=${color}&s=${size}`
-    }
+	if (gameId) {
+		url = `${url}/${gameId}?p=${getUID()}`
+	} else {
+		const size = document.querySelector('input[name="size"]:checked').value;
+		const color = document.querySelector('input[name="color"]:checked').value;
+		document.getElementById('new-game').style.display = 'none';
+		gameId = makeId()
+		location.hash = `${gameId}`
+		url = `${url}/${gameId}?p=${getUID()}&c=${color}&s=${size}`
+	}
 
-    const ws = new WebSocket(url);
-    ws.binaryType = "arraybuffer";
+	var ws = new WebSocket(url);
+	ws.binaryType = "arraybuffer";
 
-    goban.onPut = (idx) => {
-        const buffer = new ArrayBuffer(3);
-        var dv = new DataView(buffer)
-        dv.setUint8(0, goban.color);
-        dv.setUint16(1, idx, true);
-        ws.send(dv)
-    }
+	goban.onPut = (idx) => {
+		const buffer = new ArrayBuffer(3);
+		var dv = new DataView(buffer)
+		dv.setUint8(0, goban.playing);
+		dv.setUint16(1, idx, true);
+		ws.send(dv)
+	}
 
-    ws.onmessage = function(event) {
-      if (event.data instanceof ArrayBuffer) {
+	BTN_PASS.onclick = () => {
+		if (goban.color === (goban.playing & 3)) {
+			const buffer = new ArrayBuffer(3);
+			var dv = new DataView(buffer)
+			dv.setUint8(0, goban.playing);
+			dv.setUint16(1, 1000, true);
+			ws.send(dv)
+		}
+	};
 
-        var dv = new DataView(event.data);
+	ws.onmessage = function(event) {
+		if (event.data instanceof ArrayBuffer) {
 
-        if (dv.byteLength === 1) {
-            // Set color
-            goban.color = dv.getUint8(0);
-        } else {
-            // binary frame
-            goban.board = new Uint8Array(event.data.slice(6))
-            goban.playing = dv.getUint8(0);
-            goban.lines = dv.getUint8(5);
+			var dv = new DataView(event.data);
 
-            window.requestAnimationFrame(() => goban.draw() );
+			if (dv.byteLength === 1) {
+				// Set color
+				goban.color = dv.getUint8(0);
+				if (goban.color === EMPTY) {
+					BTN_PASS.style.display = 'none';
+				}
+			} else {
+				goban.setState(dv);
+				window.requestAnimationFrame(() => goban.draw() );
 
-            document.getElementById('black').innerText = dv.getUint16(1, true);
-            document.getElementById('white').innerText = dv.getUint16(3, true);
-        }
-      }
-    }
+				let [black_points, white_points] = goban.countPoints(dv)
+
+				document.getElementById('black').innerText = black_points;
+				document.getElementById('white').innerText = white_points;
+
+				let pass_text = goban.pass_text;
+				if (pass_text) {
+					BTN_PASS.innerText = pass_text;
+					BTN_PASS.style.display = 'inline-block';
+				} else {
+					BTN_PASS.style.display = 'none';
+				}
+			}
+		}
+	}
 
 	ws.onclose = () => {
 		console.log('closed');
 	}
 
-    ws.onerror = function(event) {
-        console.error(event)
-    }
+	ws.onerror = function(event) {
+		console.error(event)
+	}
 }
 
 if (location.hash == '') {
-    document.getElementById('new-game').style.display = 'block';
+	document.getElementById('new-game').style.display = 'block';
 } else {
-    connect(location.hash.substring(1))
+	connect(location.hash.substring(1))
 }
 
 
 function makeId() {
-    var result = '';
-    var digits = '0123456789abcdef';
-    for (let i = 0; i < 32; i++ ) {
-           result += digits.charAt(Math.floor(Math.random() * 16));
-    }
-    return result;
+	var result = '';
+	var digits = '0123456789abcdef';
+	for (let i = 0; i < 32; i++ ) {
+		result += digits.charAt(Math.floor(Math.random() * 16));
+	}
+	return result;
 }
 
 	 </script>
