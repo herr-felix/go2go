@@ -153,7 +153,6 @@ class Goban {
 	}
 
 	markAs(pos, playerColor) {
-		console.log('marking')
 		let current = this.at(pos);
 		let currentColor = (current & 3);
 		let currentMark = (current >> 2);

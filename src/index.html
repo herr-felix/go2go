@@ -6,58 +6,86 @@
     <title>Go2Go</title>
     <style>
         body {
+						font-size: 20px;
             font-family: 'sans';
-						color: #efefef;
 						background-color: #222;
-        }
-        .container {
-            margin: 40px auto 0 auto;
-            width: 500px;
             text-align: center;
-            font-size: 24px;
+						margin: 0;
         }
         #canvas {
-            margin-top: 12px;
+						margin: 0 auto;
+						width: min(calc(100vw - 40px), calc(100vh - 125px));
+						display: block;
         }
-        #black, #white {
+        .black, .white {
             display: inline-block;
+						border-radius: 4px;
+						padding: 2px 4px;
         }
-        #black {
-            color: black;
-            text-shadow: #eee 1px 0 10px;
+        .black {
+            background-color: black;
+						color: white;
         }
-        #white {
-            color: white;
-            text-shadow: #111 1px 0 10px;
+        .white {
+            background-color: white;
+						color: black;
         }
         #new-game, #game, #pass {
             display: none;
         }
+				#pass {
+					color: black;
+				}
+				#score {
+					color: saddlebrown;
+				}
+				.wood.round {
+					display: inline-block;
+					border-radius: 36px;
+					padding: 10px 20px;
+					margin: 4px 0;
+				}
+				.wood {
+					background-color: peru;
+					border: unset;
+					border-bottom: 4px saddlebrown solid;
+					border-right: 4px saddlebrown solid;
+				}
+				#pid {
+					position: fixed;
+					bottom: 4px;
+					right: 10px;
+					text-decoration: underline;
+					font-size: 14px;
+					opacity: 0.4;
+					cursor: pointer;
+				}
     </style>
 </head>
 <body>
-    <div class="container">
-       <div id="new-game">
-           <div>
-            <label> 9 <input type="radio" name="size" value="9"> </label>
-            <label> 13 <input type="radio" name="size" value="13"> </label>
-            <label> 19 <input type="radio" name="size" value="19" selected> </label>
-           </div>
+	 <div id="new-game">
+			 <div class="wood round">
+				<label> 9 <input type="radio" name="size" value="9"> </label>
+				<label> 13 <input type="radio" name="size" value="13"> </label>
+				<label> 19 <input type="radio" name="size" value="19" selected> </label>
+			 </div>
+			 <br>
+			 <div class="wood round">
+				<label class="black"> Black <input type="radio" name="color" value="b" selected> </label>
+				<label class="white"> White <input type="radio" name="color" value="w"> </label>
+			 </div>
+			 <br>
+			 <div style="cursor: pointer" class="wood round" onclick="connect()">Go!</div>
+	 </div>
 
-           <div>
-            <label> Black <input type="radio" name="color" value="b" selected> </label>
-            <label> White <input type="radio" name="color" value="w"> </label>
-           </div>
-           <button onclick="connect()">Go!</button>
-       </div>
-
-       <div id="game">
-           <span id="black"></span> - <span id="white"></span>
-           <canvas height="500" width="500" id="canvas"></canvas>
-					 <button id="pid" onclick="changeUID()">Change player ID</button>
-					 <button id="pass">Pass</button>
-       </div>
-   </div>
+	 <div id="game">
+			<div class="wood round" id="score">
+			 <span class="black" id="black"></span> - <span class="white" id="white"></span>
+			</div>
+			 <canvas class="wood" height="500" width="500" id="canvas"></canvas>
+			 <span id="pid" onclick="changeUID()">Change player ID</span>
+			 <button id="pass" title="Pass" class="wood round">¯\_(ツ)_/¯</button>
+	 </div>
    <script>
 
 const EMPTY = 0;
@@ -68,12 +96,17 @@ const OUT = 3;
 const BTN_PASS = document.getElementById('pass');
 
 class Goban {
-	constructor (canvas, size_px) {
+	constructor (canvas) {
 		this.ctx = canvas.getContext("2d");
-		this.size = size_px;
+		this.size = this.canvasSize(canvas);
 		this.lines = 0;
 		this.color = EMPTY;
 		this.playing = EMPTY;
+
+		window.onresize = () => {
+			this.size = this.canvasSize(canvas);
+			window.requestAnimationFrame(() => this.draw() );
+		}
 
 		canvas.onmousemove = e => {
 			var rect = e.target.getBoundingClientRect();
@@ -95,6 +128,18 @@ class Goban {
 
 	get canPlay () {
 		return this.color !== EMPTY && (this.playing === OUT || this.color == (this.playing & 3));
+	}
+
+	canvasSize(canvas) {
+		let rect = canvas.getBoundingClientRect();
+		let width = rect.right - rect.left - 4;
+		canvas.width = width;
+		canvas.height = width;
+		return width
+	}
+
+	get lineThickness () {
+		return Math.max((this.size / this.lines) / 22, 1);
 	}
 
 	get hoshis () {
@@ -125,7 +170,7 @@ class Goban {
 		if (prev !== idx && this.board) {
 			if (this.board[idx] === EMPTY) {
 				this.ghost = idx;
-				this.draw();
+				window.requestAnimationFrame(() => this.draw() );
 			} else {
 				this.removeGhost();
 			}
@@ -134,7 +179,7 @@ class Goban {
 
 	removeGhost() {
 		this.ghost = null;
-		this.draw();
+		window.requestAnimationFrame(() => this.draw() );
 	}
 
 	get stoneSize () {
@@ -155,6 +200,7 @@ class Goban {
 		const l = this.size - start;
 
 		this.ctx.strokeStyle = "black"
+		this.ctx.lineWidth = this.lineThickness;
 		this.ctx.beginPath();
 		for (var x = start; x < this.size; x += this.stoneSize) {
 			// V lines
@@ -170,13 +216,14 @@ class Goban {
 		// Hoshis
 		this.ctx.fillStyle = "black";
 		this.ctx.beginPath();
+		const hoshiRadius = this.lineThickness * 2;
 		this.hoshis.forEach(i => {
 			if (this.board[i] === EMPTY) {
 				const size = this.stoneSize;
 				const x = size * (i % this.lines) + size/2;
 				const y = size * Math.floor(i / this.lines) + size/2;
 				this.ctx.moveTo(x, y);
-				this.ctx.arc(x-0.5, y, 3, 0, Math.PI*2, false);
+				this.ctx.arc(x, y, hoshiRadius, 0, Math.PI*2, false);
 			}
 		});
 		this.ctx.fill();
@@ -216,11 +263,12 @@ class Goban {
 	}
 
 	drawPoints (total) {
+		const pointSize = this.stoneSize / 4;
 		this.ctx.fillStyle = "black";
 		this.ctx.beginPath();
 		for (let i = 0; i < total; i++) {
 			if ((this.board[i] >> 2) === BLACK) {
-				this.drawPoint(i);
+				this.drawPoint(i, pointSize);
 			}
 		}
 		this.ctx.fill();
@@ -229,18 +277,19 @@ class Goban {
 		this.ctx.beginPath();
 		for (let i = 0; i < total; i++) {
 			if ((this.board[i] >> 2) === WHITE) {
-				this.drawPoint(i);
+				this.drawPoint(i, pointSize);
 			}
 		}
 		this.ctx.fill();
 	}
 
-	drawPoint(idx) {
+	drawPoint(idx, pointSize) {
 			const size = this.stoneSize;
 			const x = size * (idx % this.lines) + size/2;
 			const y = size * Math.floor(idx / this.lines) + size/2;
 			this.ctx.moveTo(x, y);
-			this.ctx.rect(x - 4.5, y - 4.5, 8, 8);
+			const off = pointSize / 2;
+			this.ctx.rect(x - off, y - off, pointSize, pointSize);
 	}
 
 	drawStone (idx, color) {
@@ -311,7 +360,7 @@ class Goban {
 			if (this.hasPassed) {
 				return 'Finish'
 			}
-			return 'Pass';
+			return '¯\\_(ツ)_/¯';
 		}
 	}
 }
@@ -339,7 +388,7 @@ function connect(gameId) {
 	document.getElementById('game').style.display = 'block';
 
 	const canvas = document.getElementById("canvas");
-	var goban = new Goban(canvas, 500);
+	var goban = new Goban(canvas);
 
 	var url = `${window.location.protocol === 'https:' ? 'wss' : 'ws' }://${window.location.host}`
 
