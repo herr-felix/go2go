@@ -293,7 +293,7 @@ export class GoGame {
 					}
 				}
 				await this.state.storage.put("game", game)
-				this.updateTimeout();
+				this.updateTTL();
 			}
 
 			await this.handleSession(pair[1], game, pid);
@@ -305,7 +305,6 @@ export class GoGame {
 	async handleSession(ws, game, pid) {
   	this.state.acceptWebSocket(ws)
 
-		try {
 		let msg = new Uint8Array(new ArrayBuffer(1))
 		const color = pid === game.black ? 1 : pid === game.white ? 2 : 0;
 
@@ -315,9 +314,6 @@ export class GoGame {
 			ws.send(msg)
 		}
 		ws.send(game.board)
-		} catch (err) {
-			console.log(err)
-		}
 	}
 
 	async webSocketMessage(ws, msg) {
@@ -342,12 +338,12 @@ export class GoGame {
 
 			await this.state.storage.put("game", game);
 			this.broadcast(game.board);
-			this.updateTimeout();
+			this.updateTTL();
 		}
 	}
 
-	updateTimeout() {
-		this.setAlarm(new Date((new Date()).getTime() + 86400000)) // Set alarm to now + 24h
+	updateTTL() {
+		this.state.storage.setAlarm(new Date((new Date()).getTime() + 86400000)) // Set alarm to now + 24h
 	}
 
   webSocketClose(ws) {
