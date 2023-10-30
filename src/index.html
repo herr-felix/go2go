@@ -124,6 +124,8 @@ class Goban {
 				let idx = this.coordsToIdx(e.clientX - rect.left, e.clientY - rect.top);
 				this.putStone(idx);
 			}
+			e.preventDefault();
+			e.stopPropagation();
 		}
 	}
 
