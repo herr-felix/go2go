@@ -11,10 +11,12 @@
 						background-color: #222;
             text-align: center;
 						margin: 0;
+						color: white;
         }
         #canvas {
 						margin: 0 auto;
 						width: min(calc(100vw - 40px), calc(100vh - 125px));
+						height: min(calc(100vw - 40px), calc(100vh - 125px));
 						display: block;
         }
         .black, .white {
@@ -33,9 +35,6 @@
         #new-game, #game, #pass {
             display: none;
         }
-				#pass {
-					color: black;
-				}
 				#score {
 					color: saddlebrown;
 				}
@@ -46,6 +45,7 @@
 					margin: 4px 0;
 				}
 				.wood {
+					color: black;
 					background-color: peru;
 					border: unset;
 					border-bottom: 4px saddlebrown solid;
@@ -105,6 +105,7 @@ class Goban {
 
 		window.onresize = () => {
 			this.size = this.canvasSize(canvas);
+			this.stoneSize = this.size / this.lines;
 			window.requestAnimationFrame(() => this.draw() );
 		}
 
@@ -182,14 +183,12 @@ class Goban {
 		window.requestAnimationFrame(() => this.draw() );
 	}
 
-	get stoneSize () {
-		return this.size / this.lines
-	}
-
 	draw() {
 		if (this.board === undefined || this.lines === 0) {
 			return;
 		}
+
+		this.stoneSize = this.size / this.lines;
 
 		// Goban
 		this.ctx.fillStyle = "peru";
@@ -202,13 +201,14 @@ class Goban {
 		this.ctx.strokeStyle = "black"
 		this.ctx.lineWidth = this.lineThickness;
 		this.ctx.beginPath();
-		for (var x = start; x < this.size; x += this.stoneSize) {
+		this.ctx.rect(start, start, l - start, l - start);
+		for (var x = start + this.stoneSize ; x <= this.size - this.stoneSize; x += this.stoneSize) {
 			// V lines
 			this.ctx.moveTo(x, start);
 			this.ctx.lineTo(x, l);
 
 			// H lines
-			this.ctx.moveTo(start, x);
+			this.ctx.moveTo(start, x );
 			this.ctx.lineTo(l, x);
 		}
 		this.ctx.stroke();
@@ -232,7 +232,7 @@ class Goban {
 		if (this.ghost !== null && (this.playing & 3) === this.color) {
 			this.ctx.fillStyle = this.color === WHITE ? "rgb(255, 255, 255, 0.5)" : "rgb(0, 0, 0, 0.5)";
 			this.ctx.beginPath();
-			this.drawStone(this.ghost, this.color)
+			this.drawStone(this.ghost)
 			this.ctx.fill();
 		}
 
@@ -242,7 +242,7 @@ class Goban {
 		this.ctx.beginPath();
 		for (let i = 0; i < total; i++) {
 			if ((this.board[i] & 3) === BLACK) {
-				this.drawStone(i, BLACK)
+				this.drawStone(i)
 			}
 		}
 		this.ctx.fill();
@@ -252,7 +252,7 @@ class Goban {
 		this.ctx.beginPath();
 		for (let i = 0; i < total; i++) {
 			if ((this.board[i] & 3) === WHITE) {
-				this.drawStone(i, WHITE)
+				this.drawStone(i)
 			}
 		}
 		this.ctx.fill();
@@ -284,20 +284,18 @@ class Goban {
 	}
 
 	drawPoint(idx, pointSize) {
-			const size = this.stoneSize;
-			const x = size * (idx % this.lines) + size/2;
-			const y = size * Math.floor(idx / this.lines) + size/2;
+			const x = this.stoneSize * (idx % this.lines) + this.stoneSize/2;
+			const y = this.stoneSize * Math.floor(idx / this.lines) + this.stoneSize/2;
 			this.ctx.moveTo(x, y);
 			const off = pointSize / 2;
 			this.ctx.rect(x - off, y - off, pointSize, pointSize);
 	}
 
-	drawStone (idx, color) {
-		const size = this.stoneSize;
-		const x = size * (idx % this.lines) + size/2;
-		const y = size * Math.floor(idx / this.lines) + size/2;
+	drawStone (idx) {
+		const x = this.stoneSize * (idx % this.lines) + this.stoneSize/2;
+		const y = this.stoneSize * Math.floor(idx / this.lines) + this.stoneSize/2;
 		this.ctx.moveTo(x, y);
-		this.ctx.arc(x, y, size/2 - 1, 0, Math.PI*2, false);
+		this.ctx.arc(x, y, this.stoneSize/2 * 0.92, 0, Math.PI*2, false);
 	}
 
 	get hasPassed() {
@@ -316,6 +314,7 @@ class Goban {
 	}
 
 	get komi() {
+		// TODO: Make komi dependent on board size
 		return 6.5;
 	}
 
@@ -351,17 +350,8 @@ class Goban {
 		return [black_points, white_points];
 	}
 
-	get pass_text() {
-		if (this.color === EMPTY || this.playing === OUT) {
-			return;
-		}
-
-		if (this.color === (this.playing & 3)) {
-			if (this.hasPassed) {
-				return 'Finish'
-			}
-			return '¯\\_(ツ)_/¯';
-		}
+	get canPass() {
+		return this.playing !== OUT && this.color === (this.playing & 3);
 	}
 }
 
@@ -444,13 +434,7 @@ function connect(gameId) {
 				document.getElementById('black').innerText = black_points;
 				document.getElementById('white').innerText = white_points;
 
-				let pass_text = goban.pass_text;
-				if (pass_text) {
-					BTN_PASS.innerText = pass_text;
-					BTN_PASS.style.display = 'inline-block';
-				} else {
-					BTN_PASS.style.display = 'none';
-				}
+				BTN_PASS.style.display = goban.canPass ? 'inline-block' : 'none';
 			}
 		}
 	}
