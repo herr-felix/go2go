@@ -20,6 +20,8 @@ const RIGHT = 2;
 const DOWN = 3;
 const LEFT = 4;
 
+const PASS_FLAG = 0x80;
+
 const directions = [UP,RIGHT,DOWN,LEFT]
 
 // `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
@@ -65,14 +67,11 @@ export default {
 
 
 async function handleApiRequest(name, request, env) {
-
-	let id;
-	if (name.length <= 32) {
-		id = env.games.idFromName(name);
-	}  else {
+	if (name.length > 32) {
 		return new Response("Not found", {status: 404});
 	}
-	let gameObject = env.games.get(id);
+
+	let gameObject = env.games.get(env.games.idFromName(name));
 
 	let newUrl = new URL(request.url);
 	newUrl.pathname = "/" + name
@@ -108,16 +107,15 @@ class Goban {
 	getGroup (start) {
 		let color = this.at(start)
 		let cluster = new Set()
-
-		let q = [];
-		q.push(start)
+		let q = [start];
 
 		while (q.length > 0) {
-			let pos = q.pop()
-			if (this.at(pos) == color && !cluster.has(pos)) {
-				cluster.add(pos)
-				for (let dir of directions) {
-					q.push(this.at(pos, dir)) // Left
+			let pos = q.pop();
+			cluster.add(pos);
+			for (let dir of directions) {
+				let next = this.at(pos, dir);
+				if (!cluster.has(next) && this.at(next) === color) {
+					q.push(next);
 				}
 			}
 		}
@@ -160,7 +158,9 @@ class Goban {
 		var newMark = (playerColor << 2) | currentColor;
 
 		// Can't mark your own stones, only unmark them
-	  if (currentMark === playerColor) {
+		if (current === playerColor) {
+			return;
+		} else if (currentMark === playerColor) {
 			newMark = currentColor
 		} else if (currentColor === playerColor) {
 			newMark = currentColor
@@ -179,7 +179,7 @@ class Goban {
 				// Previous turn was passed. This turn also. THE GAME IS OVER!
 				this.board.setUint8(0, OUT) // When the playing color is OUT, it means that the game is over and the players are counting points
 			} else {
-				this.board.setUint8(0, 0x80 | color ^ 3)
+				this.board.setUint8(0, PASS_FLAG | color ^ 3)
 			}
 			return true; // This is "passing"
 		}
