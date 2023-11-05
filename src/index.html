@@ -164,7 +164,7 @@ class Goban {
 	}
 
 	coordsToIdx(x, y) {
-		return (this.lines * Math.floor(y/this.stoneSize)) + Math.floor(x/this.stoneSize);
+		return (this.lines * Math.floor(y/this.stoneSize)) + Math.min(this.lines - 1, Math.floor(x/this.stoneSize));
 	}
 
 	moveGhost(x, y) {

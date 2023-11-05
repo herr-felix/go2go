@@ -1,13 +1,3 @@
-/**
- * Welcome to Cloudflare Workers! This is your first worker.
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `npm run deploy` to publish your worker
- *
- * Learn more at https://developers.cloudflare.com/workers/
- */
-
 import HTML from "./index.html";
 
 const EMPTY = 0;
@@ -24,17 +14,11 @@ const PASS_FLAG = 0x80;
 
 const directions = [UP,RIGHT,DOWN,LEFT]
 
-// `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
-// try/catch and return errors to the client. You probably wouldn't want to use this in production
-// code but it is convenient when debugging and iterating.
 async function handleErrors(request, func) {
   try {
     return await func();
   } catch (err) {
     if (request.headers.get("Upgrade") == "websocket") {
-      // Annoyingly, if we return an HTTP error in response to a WebSocket request, Chrome devtools
-      // won't show us the response body! So... let's send a WebSocket response with an error
-      // frame instead.
       let pair = new WebSocketPair();
       pair[1].accept();
       pair[1].send(JSON.stringify({error: err.stack}));
@@ -107,21 +91,24 @@ class Goban {
 	getGroup (start) {
 		let color = this.at(start)
 		let cluster = new Set()
-		let q = [start];
+		if (color !== OUT) {
+			let q = [start];
 
-		while (q.length > 0) {
-			let pos = q.pop();
-			cluster.add(pos);
-			for (let dir of directions) {
-				let next = this.at(pos, dir);
-				if (!cluster.has(next) && this.at(next) === color) {
-					q.push(next);
+			while (q.length > 0) {
+				let pos = q.pop();
+				cluster.add(pos);
+				for (let dir of directions) {
+					let next = this.at(pos, dir);
+					if (!cluster.has(next) && this.at(next) === color) {
+						q.push(next);
+					}
 				}
 			}
 		}
 		return cluster
 	}
 
+	// Returns the color at `idx`. If `direction` is precised, returns the idx at `direction` of idx.
 	at (idx, direction) {
 		switch (direction) {
 			case UP:
@@ -146,10 +133,36 @@ class Goban {
 		}
 	}
 
+	// Set color at idx
 	setAt(idx, color) {
 		this.board.setUint8(idx + this.offset, color)
 	}
 
+	async isRepeated(history) {
+		if ((this.board.getUint8(0) & PASS_FLAG) || this.playingColor === OUT) {
+			return false;
+		}
+
+		let board = this.board.buffer.slice(this.offset)
+		let stoneCount = (new Uint8Array(board)).reduce((count, color) => color && count + 1 || count, 0);
+		let boardChecksum = new BigUint64Array(await crypto.subtle.digest({name: 'SHA-256'}, board))
+
+		let statesWithCount = history[stoneCount];
+		// Have we ever had this stone count?
+		if (statesWithCount) {
+			console.log(statesWithCount)
+			if (statesWithCount.some(x => x.every((b, i) => b === boardChecksum[i]))) {
+				return true;
+			}
+			statesWithCount.push(boardChecksum)
+		} else {
+			history[stoneCount] = [boardChecksum]
+		}
+
+		return false;
+	}
+
+	// Set a mark (mask) at idx. Player connot mark it's own stones.
 	markAs(pos, playerColor) {
 		let current = this.at(pos);
 		let currentColor = (current & 3);
@@ -174,12 +187,25 @@ class Goban {
 	}
 
 	play (pos, color) {
+		if (this.playingColor === OUT) {
+			// We are counting points
+			return this.markAs(pos, color)
+		}
+
+		if ((color & 3) !== this.playingColor) {
+			return false // not it's turn to play
+		}
+
+		let op_color = color ^ 3; // Opposite color
+
+		// Playing outside of the board is how you pass.
 	  if (pos > this.size || pos < 0) {
-			if (color >> 7) { // Is the "PASSED" bit set?
+			if (this.board.getUint8(0) >> 7) { // Is the "PASSED" bit set?
 				// Previous turn was passed. This turn also. THE GAME IS OVER!
 				this.board.setUint8(0, OUT) // When the playing color is OUT, it means that the game is over and the players are counting points
 			} else {
-				this.board.setUint8(0, PASS_FLAG | color ^ 3)
+				this.board.setUint8(0, PASS_FLAG | op_color) // Add the PASS_FLAG and change the playing color
+				console.log('passing')
 			}
 			return true; // This is "passing"
 		}
@@ -194,19 +220,23 @@ class Goban {
 
 		let captured = new Set()
 		let alive = new Set()
-		let op_color = color ^ 3;
 
+		// Play at pos
 		this.setAt(pos, color);
 
+
+		// Did we kill a group?
 		for (let dir of directions) {
 			const p = this.at(pos, dir)
 			if (this.at(p) == op_color &&  !(alive.has(p) || captured.has(p))) {
 				let adjGroup = this.getGroup(p)
 				if (this.isGroupDead(adjGroup)) {
+					// captured = union(captured + adjGroup)
 					for (const x of adjGroup.values()) {
 						captured.add(x)
 					}
   			} else {
+					// alive = union(alive + adjGroup)
 					for (const x of adjGroup.values()) {
 						alive.add(x)
 					}
@@ -224,21 +254,30 @@ class Goban {
 			this.setAt(c, EMPTY)
 		}
 
+		// Stones have been captured! We update the points
 		if (captured.size > 0) {
-			if (color == BLACK) {
-				this.board.setUint16(1, this.board.getUint16(1, true) + captured.size, true);
-			} else {
-				this.board.setUint16(3, this.board.getUint16(3, true) + captured.size, true);
-			}
+			let points_idx = color === BLACK ? 1 : 3;
+			this.board.setUint16(points_idx, this.board.getUint16(points_idx, true) + captured.size, true);
 		}
 
-		this.board.setUint8(0, color ^ 3)
+		// Set the playing color
+		this.board.setUint8(0, op_color)
 
 		return true
 	}
 
 }
 
+function decodeBoardSize(size) {
+	switch (size) {
+		case "9":
+			return 9;
+		case "13":
+			return 13;
+		default:
+			return 19;
+	}
+}
 
 export class GoGame {
   constructor(state, env) {
@@ -255,7 +294,7 @@ export class GoGame {
 
 			const pid = (new URLSearchParams(url.search)).get('p')
 
-			let game = (await this.state.storage.get('game')) || {};
+			let game = (await this.state.storage.get('game')) || {history: []};
 			const canPlay = pid && pid !== game.black && pid !== game.white;
 
 			let pair = new WebSocketPair();
@@ -280,16 +319,7 @@ export class GoGame {
 					game.board.setUint8(0, 1) // Set black as first to play
 
 					const size = (new URLSearchParams(url.search)).get('s')
-					switch (size) {
-						case "9":
-							game.board.setUint8(5, 9) // Set Size to 9
-							break;
-						case "13":
-							game.board.setUint8(5, 13) // Set Size to 13
-							break;
-						default:
-							game.board.setUint8(5, 19) // Set Size to 19
-					}
+					game.board.setUint8(5, decodeBoardSize(size)) // Set the board's size
 				}
 				await this.state.storage.put("game", game)
 				this.updateTTL();
@@ -305,9 +335,9 @@ export class GoGame {
   	this.state.acceptWebSocket(ws)
 
 		let msg = new Uint8Array(new ArrayBuffer(1))
-		const color = pid === game.black ? 1 : pid === game.white ? 2 : 0;
+		const color = pid === game.black ? BLACK : pid === game.white ? WHITE : EMPTY;
 
-		if (color > 0) {
+		if (color !== EMPTY) {
 			ws.serializeAttachment(color);
 			msg[0] = color || 0;
 			ws.send(msg)
@@ -319,25 +349,28 @@ export class GoGame {
 		let dv = new DataView(msg);
 		let playerColor = ws.deserializeAttachment()
 
+		try {
 		if (playerColor) {
 			let game = await this.state.storage.get("game")
 			let goban = new Goban(game.board)
 
 			let pos = dv.getUint16(1, true);
-			let color = dv.getUint8(0);
 
-			if (color === OUT) {
-				// We are counting points
-				if (!goban.markAs(pos, playerColor)) {
-					return // They are trying to count their own stones are prisonners?
-				}
-			} else if (!((color & 3) === playerColor && goban.playingColor === playerColor) || !goban.play(pos, color)) {
+			if (!goban.play(pos, playerColor)) {
 				return // Not a legal move
+			}
+
+			// Check for state repetition
+			if (await goban.isRepeated(game.history)) {
+				return
 			}
 
 			await this.state.storage.put("game", game);
 			this.broadcast(game.board);
 			this.updateTTL();
+		}
+		} catch (err) {
+			console.error(err);
 		}
 	}
 
