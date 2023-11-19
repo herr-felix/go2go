@@ -150,7 +150,6 @@ class Goban {
 		let statesWithCount = history[stoneCount];
 		// Have we ever had this stone count?
 		if (statesWithCount) {
-			console.log(statesWithCount)
 			if (statesWithCount.some(x => x.every((b, i) => b === boardChecksum[i]))) {
 				return true;
 			}
@@ -205,7 +204,6 @@ class Goban {
 				this.board.setUint8(0, OUT) // When the playing color is OUT, it means that the game is over and the players are counting points
 			} else {
 				this.board.setUint8(0, PASS_FLAG | op_color) // Add the PASS_FLAG and change the playing color
-				console.log('passing')
 			}
 			return true; // This is "passing"
 		}
