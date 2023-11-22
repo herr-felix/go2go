@@ -65,12 +65,9 @@ async function handleApiRequest(name, request, env) {
 
 
 class Goban {
-	offset = 6;
-
-	constructor (board) {
-		this.board = board;
-		this.lines = this.board.getUint8(5);
-		this.size = this.lines*this.lines;
+	constructor (game) {
+		this.game = game;
+		this.size = this.game.lines*this.game.lines;
 	}
 
 	isGroupDead (group) {
@@ -82,10 +79,6 @@ class Goban {
 			}
 		}
 		return true
-	}
-
-	get playingColor() {
-		return this.board.getUint8(0) & 3;
 	}
 
 	getGroup (start) {
@@ -112,53 +105,76 @@ class Goban {
 	at (idx, direction) {
 		switch (direction) {
 			case UP:
-      	return idx - this.lines
+      	return idx - this.game.lines
 			case LEFT:
-				if (idx % this.lines == 0) {
+				if (idx % this.game.lines == 0) {
 					return this.size // Out
 				}
 				return idx - 1
 			case RIGHT:
-				if (idx % this.lines + 1 == this.lines) {
+				if (idx % this.game.lines + 1 == this.game.lines) {
 					return this.size // Out
 				}
 				return idx + 1;
 			case DOWN:
-				return idx + this.lines
+				return idx + this.game.lines
 			default:
 				if (idx < 0 || idx >= this.size) {
 					return OUT;
 				}
-				return this.board.getUint8(idx + this.offset)
+				return this.game.board[idx] || EMPTY
 		}
 	}
 
 	// Set color at idx
 	setAt(idx, color) {
-		this.board.setUint8(idx + this.offset, color)
+		this.game.board[idx] = color;
 	}
 
 	async isRepeated(history) {
-		if ((this.board.getUint8(0) & PASS_FLAG) || this.playingColor === OUT) {
-			return false;
-		}
-
-		let board = this.board.buffer.slice(this.offset)
-		let stoneCount = (new Uint8Array(board)).reduce((count, color) => color && count + 1 || count, 0);
+		const board = new Uint8Array(this.game.board)
+		let stoneCount = board.reduce((count, color) => color && count + 1 || count, 0);
 		let boardChecksum = new BigUint64Array(await crypto.subtle.digest({name: 'SHA-256'}, board))
 
 		let statesWithCount = history[stoneCount];
 		// Have we ever had this stone count?
 		if (statesWithCount) {
 			if (statesWithCount.some(x => x.every((b, i) => b === boardChecksum[i]))) {
-				return true;
+				throw new TypeError("The board cannot repeat a previous state.");
 			}
 			statesWithCount.push(boardChecksum)
 		} else {
 			history[stoneCount] = [boardChecksum]
 		}
+	}
 
-		return false;
+	get gameIsOver() {
+		return this.game.moves.length > 0 && this.game.moves[this.game.moves.length - 1].length === 4;
+	}
+
+	get lastMove() {
+		return this.game.moves.length > 0 && this.game.moves[this.game.moves.length - 1][0]
+	}
+
+
+	getMarked(color) {
+		return this.game.board.reduce((acc, c, i) => {
+			switch (c) {
+				case (WHITE << 2) | BLACK: // Black prisoners
+					acc[0].push(i);
+					break;
+				case (BLACK << 2) | WHITE: // White prisoners
+					acc[1].push(i);
+					break;
+				case BLACK << 2: // Black territory
+					acc[2].push(i);
+					break;
+				case WHITE << 2: // White territory
+					acc[3].push(i);
+					break;
+			}
+			return acc;
+		}, [[], [], [], []])
 	}
 
 	// Set a mark (mask) at idx. Player connot mark it's own stones.
@@ -170,50 +186,43 @@ class Goban {
 		var newMark = (playerColor << 2) | currentColor;
 
 		// Can't mark your own stones, only unmark them
-		if (current === playerColor) {
-			return;
-		} else if (currentMark === playerColor) {
-			newMark = currentColor
-		} else if (currentColor === playerColor) {
-			newMark = currentColor
+		if (current !== playerColor) {
+			if (currentMark === playerColor || currentColor === playerColor) {
+				newMark = currentColor
+			}
+
+			for (let marked of this.getGroup(pos).values()) {
+				this.setAt(marked, newMark);
+			}
 		}
 
-		for (let marked of this.getGroup(pos).values()) {
-			this.setAt(marked, newMark);
-		}
-
-		return true;
+		return this.getMarked();
 	}
 
 	play (pos, color) {
-		if (this.playingColor === OUT) {
-			// We are counting points
-			return this.markAs(pos, color)
+
+		if (this.gameIsOver) {
+			return this.markAs(pos, color);
 		}
 
-		if ((color & 3) !== this.playingColor) {
-			return false // not it's turn to play
+		if (this.lastMove === undefined && pos === null) {
+			return this.getMarked();
+		}
+
+		if ((this.game.moves.length % 2 + 1) !== color) {
+			throw new TypeError("Not color's turn");
 		}
 
 		let op_color = color ^ 3; // Opposite color
 
 		// Playing outside of the board is how you pass.
-	  if (pos > this.size || pos < 0) {
-			if (this.board.getUint8(0) >> 7) { // Is the "PASSED" bit set?
-				// Previous turn was passed. This turn also. THE GAME IS OVER!
-				this.board.setUint8(0, OUT) // When the playing color is OUT, it means that the game is over and the players are counting points
-			} else {
-				this.board.setUint8(0, PASS_FLAG | op_color) // Add the PASS_FLAG and change the playing color
-			}
-			return true; // This is "passing"
+	  if (pos === null) {
+			return []; // This is "passing"
 		}
-
-		// Remove the "passed" flag
-		color = color & 3;
 
 		//# Can only play on empty positions
 		if (this.at(pos) !== EMPTY) {
-			return false;
+			throw new TypeError("Position is not empty");
 		}
 
 		let captured = new Set()
@@ -228,23 +237,16 @@ class Goban {
 			const p = this.at(pos, dir)
 			if (this.at(p) == op_color &&  !(alive.has(p) || captured.has(p))) {
 				let adjGroup = this.getGroup(p)
-				if (this.isGroupDead(adjGroup)) {
-					// captured = union(captured + adjGroup)
-					for (const x of adjGroup.values()) {
-						captured.add(x)
-					}
-  			} else {
-					// alive = union(alive + adjGroup)
-					for (const x of adjGroup.values()) {
-						alive.add(x)
-					}
+				let deadOrAlive = this.isGroupDead(adjGroup) ? captured : alive;
+				for (const x of adjGroup.values()) {
+					deadOrAlive.add(x)
 				}
 			}
 		}
 
 		// Group is dead and have no captured? Not a valid move
 		if (captured.size == 0 && this.isGroupDead(this.getGroup(pos))) {
-			return false // No a valid move
+			throw new TypeError("Suicides not allowed.");
 		}
 
 		// Remove captured
@@ -252,16 +254,10 @@ class Goban {
 			this.setAt(c, EMPTY)
 		}
 
-		// Stones have been captured! We update the points
 		if (captured.size > 0) {
-			let points_idx = color === BLACK ? 1 : 3;
-			this.board.setUint16(points_idx, this.board.getUint16(points_idx, true) + captured.size, true);
+			return [pos, Array.from(captured.values())]
 		}
-
-		// Set the playing color
-		this.board.setUint8(0, op_color)
-
-		return true
+		return [pos]
 	}
 
 }
@@ -292,12 +288,12 @@ export class GoGame {
 
 			const pid = (new URLSearchParams(url.search)).get('p')
 
-			let game = (await this.state.storage.get('game')) || {history: []};
+			let game = (await this.state.storage.get('game')) || {history: [], moves: [], board: []};
 			const canPlay = pid && pid !== game.black && pid !== game.white;
 
 			let pair = new WebSocketPair();
 
-			if (!game.board || canPlay) {
+			if (!game.lines || canPlay) {
 				if (canPlay) {
 					const color = (new URLSearchParams(url.search)).get('c')
 
@@ -312,12 +308,9 @@ export class GoGame {
 					}
 				}
 
-				if (!game.board) {
-					game.board = new DataView(new ArrayBuffer(361 + 7))
-					game.board.setUint8(0, 1) // Set black as first to play
-
+				if (!game.lines) {
 					const size = (new URLSearchParams(url.search)).get('s')
-					game.board.setUint8(5, decodeBoardSize(size)) // Set the board's size
+					game.lines = decodeBoardSize(size) // Set the board's size
 				}
 				await this.state.storage.put("game", game)
 				this.updateTTL();
@@ -332,41 +325,39 @@ export class GoGame {
 	async handleSession(ws, game, pid) {
   	this.state.acceptWebSocket(ws)
 
-		let msg = new Uint8Array(new ArrayBuffer(1))
 		const color = pid === game.black ? BLACK : pid === game.white ? WHITE : EMPTY;
-
 		if (color !== EMPTY) {
 			ws.serializeAttachment(color);
-			msg[0] = color || 0;
-			ws.send(msg)
 		}
-		ws.send(game.board)
+
+		ws.send(JSON.stringify({color, size: game.lines, history: game.moves }))
 	}
 
 	async webSocketMessage(ws, msg) {
-		let dv = new DataView(msg);
 		let playerColor = ws.deserializeAttachment()
 
 		try {
-		if (playerColor) {
-			let game = await this.state.storage.get("game")
-			let goban = new Goban(game.board)
+			if (playerColor) {
+				let game = await this.state.storage.get("game")
+				let goban = new Goban(game)
 
-			let pos = dv.getUint16(1, true);
+				const pos = JSON.parse(msg);
 
-			if (!goban.play(pos, playerColor)) {
-				return // Not a legal move
+				// Play
+				const move = goban.play(pos, playerColor)
+
+				if (goban.gameIsOver) {
+					game.moves.pop();
+				} else if (move.length > 0 && move.length !== 4) { // Only check if we didn't pass
+					// Check for state repetition
+					await goban.isRepeated(game.history);
+				}
+				game.moves.push(move);
+
+				await this.state.storage.put("game", game);
+				this.broadcast(JSON.stringify(move));
+				this.updateTTL();
 			}
-
-			// Check for state repetition
-			if (await goban.isRepeated(game.history)) {
-				return
-			}
-
-			await this.state.storage.put("game", game);
-			this.broadcast(game.board);
-			this.updateTTL();
-		}
 		} catch (err) {
 			console.error(err);
 		}

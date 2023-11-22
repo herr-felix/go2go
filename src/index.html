@@ -32,7 +32,7 @@
             background-color: white;
 						color: black;
         }
-        #new-game, #game, #pass {
+        #new-game, #game {
             display: none;
         }
 				#score {
@@ -45,6 +45,7 @@
 					margin: 4px 0;
 				}
 				.wood {
+					box-sizing: content-box;
 					color: black;
 					background-color: peru;
 					border: unset;
@@ -59,6 +60,22 @@
 					font-size: 14px;
 					opacity: 0.4;
 					cursor: pointer;
+				}
+				#turn {
+					width: 2em;
+				}
+				#steps {
+					height: 10px;
+					display: block;
+					margin: 20px;
+					width: calc(100vw - 40px);
+				}
+				button {
+					font-size: 18px;
+					height: 24px;
+				}
+				button:disabled {
+					opacity: 0.4;
 				}
     </style>
 </head>
@@ -82,9 +99,11 @@
 			<div class="wood round" id="score">
 			 <span class="black" id="black"></span> - <span class="white" id="white"></span>
 			</div>
-			 <canvas class="wood" height="500" width="500" id="canvas"></canvas>
-			 <span id="pid" onclick="changeUID()">Change player ID</span>
-			 <button id="pass" title="Pass" class="wood round">¯\_(ツ)_/¯</button>
+			<canvas class="wood" height="500" width="500" id="canvas"></canvas>
+			<span id="pid" onclick="changeUID()">Change player ID</span>
+			<button onclick="" id="pass" title="Pass" class="wood round">Pass</button>
+			<button class="wood round" id="turn">0</button>
+			<input id="steps" type="range" name="steps" value="0" min="0" max="0">
 	 </div>
    <script type="text/javascript">
 
@@ -94,6 +113,8 @@ const WHITE = 2;
 const OUT = 3;
 
 const BTN_PASS = document.getElementById('pass');
+const HISTORY_SLIDER = document.getElementById('steps');
+const TURN_COUNTER = document.getElementById('turn');
 
 class Goban {
 	constructor (canvas) {
@@ -101,7 +122,10 @@ class Goban {
 		this.size = this.canvasSize(canvas);
 		this.lines = 0;
 		this.color = EMPTY;
-		this.playing = EMPTY;
+		this.blacks = new Set();
+		this.whites = new Set();
+		this.history = [];
+		this.turn = 0;
 
 		window.onresize = () => {
 			this.size = this.canvasSize(canvas);
@@ -119,18 +143,39 @@ class Goban {
 		}
 
 		canvas.onclick = e => {
-			if (this.canPlay) {
-				var rect = e.target.getBoundingClientRect();
-				let idx = this.coordsToIdx(e.clientX - rect.left, e.clientY - rect.top);
-				this.putStone(idx);
-			}
+			var rect = e.target.getBoundingClientRect();
+			let idx = this.coordsToIdx(e.clientX - rect.left, e.clientY - rect.top);
+			this.putStone(idx);
 			e.preventDefault();
 			e.stopPropagation();
 		}
 	}
 
-	get canPlay () {
-		return this.color !== EMPTY && (this.playing === OUT || this.color == (this.playing & 3));
+	reset(size, color, history) {
+		this.lines = size;
+		this.stoneSize = this.size / this.lines;
+		this.color = color;
+		if (history.length > 0 && history[history.length - 1].length === 4) {
+			this.final = history.pop();
+		}
+		this.history = history;
+		this.turn = 0;
+		this.goTo(this.history.length)
+		window.requestAnimationFrame(() => this.draw() );
+	}
+
+	push(move) {
+		if (move.length === 4) {
+			this.final = move
+			window.requestAnimationFrame(() => this.draw() );
+		} else if (this.isLive) {
+			this.history.push(move);
+			this.play();
+			window.requestAnimationFrame(() => this.draw() );
+		} else {
+			this.history.push(move);
+		}
+			// Only increase turn if we are at the latest turn
 	}
 
 	canvasSize(canvas) {
@@ -158,9 +203,7 @@ class Goban {
 	}
 
 	putStone(idx) {
-		if (this.canPlay) {
-			this.onPut(idx)
-		}
+		this.isLive && this.onPut(idx)
 	}
 
 	coordsToIdx(x, y) {
@@ -170,10 +213,10 @@ class Goban {
 	moveGhost(x, y) {
 		let prev = this.ghost;
 		let idx = this.coordsToIdx(x, y);
-		if (prev !== idx && this.board) {
-			if (this.board[idx] === EMPTY) {
+		if (prev !== idx) {
+			if (!this.blacks.has(idx) && !this.whites.has(idx)) {
 				this.ghost = idx;
-				window.requestAnimationFrame(() => this.draw() );
+				window.requestAnimationFrame(() => this.draw());
 			} else {
 				this.removeGhost();
 			}
@@ -186,24 +229,45 @@ class Goban {
 	}
 
 	draw() {
-		if (this.board === undefined || this.lines === 0) {
+		if (this.lines === 0) {
 			return;
 		}
 
-		this.stoneSize = this.size / this.lines;
+		this.drawBoard();
 
+		// Ghost
+		if (this.ghost !== null && this.isLive && this.playing === this.color && !this.gameOver) {
+			this.drawStones(this.color === WHITE ? "rgb(255, 255, 255, 0.5)" : "rgb(0, 0, 0, 0.5)", [this.ghost])
+		}
+
+		this.drawStones("black", this.blacks)
+		this.drawStones("white", this.whites)
+
+		if (this.isLive && this.final) {
+			const [black_cap, white_cap, black_territory, white_territory] = this.final;
+			this.drawPoints("black", white_cap);
+			this.drawPoints("black", black_territory);
+			this.drawPoints("white", black_cap);
+			this.drawPoints("white", white_territory);
+		}
+	}
+
+	drawBoard() {
 		// Goban
 		this.ctx.fillStyle = "peru";
 		this.ctx.fillRect(0, 0, this.size, this.size);
 
-		// Lines
+		// Grid
 		const start = this.stoneSize / 2;
 		const l = this.size - start;
 
 		this.ctx.strokeStyle = "black"
 		this.ctx.lineWidth = this.lineThickness;
 		this.ctx.beginPath();
+		// Edges
 		this.ctx.rect(start, start, l - start, l - start);
+
+		// Lines
 		for (var x = start + this.stoneSize ; x <= this.size - this.stoneSize; x += this.stoneSize) {
 			// V lines
 			this.ctx.moveTo(x, start);
@@ -213,14 +277,20 @@ class Goban {
 			this.ctx.moveTo(start, x );
 			this.ctx.lineTo(l, x);
 		}
+
 		this.ctx.stroke();
 
 		// Hoshis
+		this.drawHoshis();
+	}
+
+	drawHoshis() {
 		this.ctx.fillStyle = "black";
 		this.ctx.beginPath();
 		const hoshiRadius = this.lineThickness * 2;
+
 		this.hoshis.forEach(i => {
-			if (this.board[i] === EMPTY) {
+			if (!this.blacks.has(i) && !this.whites.has(i)) {
 				const size = this.stoneSize;
 				const x = size * (i % this.lines) + size/2;
 				const y = size * Math.floor(i / this.lines) + size/2;
@@ -228,92 +298,38 @@ class Goban {
 				this.ctx.arc(x, y, hoshiRadius, 0, Math.PI*2, false);
 			}
 		});
+
 		this.ctx.fill();
-
-		// Ghost
-		if (this.ghost !== null && (this.playing & 3) === this.color) {
-			this.ctx.fillStyle = this.color === WHITE ? "rgb(255, 255, 255, 0.5)" : "rgb(0, 0, 0, 0.5)";
-			this.ctx.beginPath();
-			this.drawStone(this.ghost)
-			this.ctx.fill();
-		}
-
-		const total = this.lines * this.lines;
-
-		this.ctx.fillStyle = "black";
-		this.ctx.beginPath();
-		for (let i = 0; i < total; i++) {
-			if ((this.board[i] & 3) === BLACK) {
-				this.drawStone(i)
-			}
-		}
-		this.ctx.fill();
-
-		// white
-		this.ctx.fillStyle = "white";
-		this.ctx.beginPath();
-		for (let i = 0; i < total; i++) {
-			if ((this.board[i] & 3) === WHITE) {
-				this.drawStone(i)
-			}
-		}
-		this.ctx.fill();
-
-
-		if (this.playing === OUT) {
-			this.drawPoints(total);
-		}
 	}
 
-	drawPoints (total) {
+	drawPoints (color, points) {
 		const pointSize = this.stoneSize / 4;
-		this.ctx.fillStyle = "black";
-		this.ctx.beginPath();
-		for (let i = 0; i < total; i++) {
-			if ((this.board[i] >> 2) === BLACK) {
-				this.drawPoint(i, pointSize);
-			}
-		}
-		this.ctx.fill();
 
-		this.ctx.fillStyle = "white";
+		this.ctx.fillStyle = color;
 		this.ctx.beginPath();
-		for (let i = 0; i < total; i++) {
-			if ((this.board[i] >> 2) === WHITE) {
-				this.drawPoint(i, pointSize);
-			}
-		}
-		this.ctx.fill();
-	}
 
-	drawPoint(idx, pointSize) {
+		points.forEach(idx => {
 			const x = this.stoneSize * (idx % this.lines) + this.stoneSize/2;
 			const y = this.stoneSize * Math.floor(idx / this.lines) + this.stoneSize/2;
 			this.ctx.moveTo(x, y);
 			const off = pointSize / 2;
 			this.ctx.rect(x - off, y - off, pointSize, pointSize);
+		});
+
+		this.ctx.fill();
 	}
 
-	drawStone (idx) {
-		const x = this.stoneSize * (idx % this.lines) + this.stoneSize/2;
-		const y = this.stoneSize * Math.floor(idx / this.lines) + this.stoneSize/2;
-		this.ctx.moveTo(x, y);
-		this.ctx.arc(x, y, this.stoneSize/2 * 0.92, 0, Math.PI*2, true);
-	}
-
-	get hasPassed() {
-		return this.playing >> 7 === 1 || this.playing === OUT;
-	}
-
-	setState (dv) {
-		// binary frame
-		this.playing = dv.getUint8(0);
-		this.lines = dv.getUint8(5);
-		// Only play when the board is loaded and the other player is playing
-		if (this.board && (this.color === EMPTY || this.color == (this.playing & 3)) && !this.hasPassed) {
-			playSound.play()
-		}
-		this.board = new Uint8Array(dv.buffer.slice(6))
+	drawStones (color, points) {
+		this.ctx.fillStyle = color;
+		this.ctx.beginPath();
+		for (const idx of points.values()) {
+			// Draw the stone
+			const x = this.stoneSize * (idx % this.lines) + this.stoneSize/2;
+			const y = this.stoneSize * Math.floor(idx / this.lines) + this.stoneSize/2;
+			this.ctx.moveTo(x, y);
+			this.ctx.arc(x, y, this.stoneSize/2 * 0.92, 0, Math.PI*2, true);
+		};
+		this.ctx.fill();
 	}
 
 	get komi() {
@@ -321,42 +337,202 @@ class Goban {
 		return 6.5;
 	}
 
-	countPoints(dv) {
-		let black_points = dv.getUint16(1, true);
-		let white_points = dv.getUint16(3, true);
-
-		if (this.playing === OUT) {
-			const total = this.lines * this.lines;
-
-			// Count BLACK
-			for (let i = 0; i < total; i++) {
-				if ((this.board[i] >> 2) === BLACK) { // Marked as black point
-					black_points++; // One point
-					if ((this.board[i] & 3) === WHITE) { // A white stone
-						black_points++; // a prisonner
-					}
-				}
-			}
-
-			// Count WHITE
-			white_points += this.komi;
-			for (let i = 0; i < total; i++) {
-				if ((this.board[i] >> 2) === WHITE) { // Marked as white point
-					white_points++; // One point
-					if ((this.board[i] & 3) === BLACK) { // A black stone
-						white_points++; // a prisonner
-					}
-				}
+	get points() {
+		let points = [0,0]
+		for (let i = 0; i < this.turn; i++) {
+			const move = this.history[i];
+			if (move.length === 2) {
+				points[i % 2] += move[1].length;
 			}
 		}
+		if (this.isLive && this.final){
+			// End of game
+			points[0] += (this.final[1].length * 2) + this.final[2].length
+			points[1] += (this.final[0].length * 2) + this.final[3].length + this.komi
+		}
+		return points
+	}
 
-		return [black_points, white_points];
+	get turnsCount() {
+		return this.history.length;
+	}
+
+	get playing () {
+		return this.history.length % 2 + 1
 	}
 
 	get canPass() {
-		return this.playing !== OUT && this.color === (this.playing & 3);
+		return !this.gameOver && this.color === this.playing;
+	}
+
+	get gameOver() {
+		return this.final !== undefined;
+	}
+
+	get isLive() {
+		return this.turn === this.turnsCount;
+	}
+
+	play() {
+		const blackToPlay = (this.turn % 2 === 0); // Black play on even turns
+		const playing = blackToPlay ? this.blacks : this.whites;
+		const waiting = !blackToPlay ? this.blacks : this.whites;
+		const move = this.history[this.turn];
+
+		this.turn++;
+
+		if (move.length === 0) return; // Pass
+
+		playing.add(move[0])
+
+		if (move[1]) { // Prisoners
+			for (const p of move[1]) {
+				waiting.delete(p);
+			}
+		}
+	}
+
+	unplay() {
+		this.turn = Math.max(this.turn - 1, 0)
+		const blackToPlay = (this.turn % 2 === 0); // Black play on even turns
+		const playing = blackToPlay ? this.blacks : this.whites;
+		const waiting = !blackToPlay ? this.blacks : this.whites;
+		const move = this.history[this.turn] || [];
+
+		if (move.length === 0) return; // Pass
+
+		playing.delete(move[0])
+
+		if (move[1]) { // Prisoners
+			for (const p of move[1]) {
+				waiting.add(p);
+			}
+		}
+	}
+
+	goTo(moveIdx) {
+
+		const action = moveIdx >= this.turn ? this.play.bind(this) : this.unplay.bind(this);
+		let steps = Math.abs(moveIdx - this.turn);
+
+		while (steps > 0) {
+			action();
+			steps--;
+		}
+
+		window.requestAnimationFrame(() => this.draw() );
 	}
 }
+
+
+function gameURL(gameId, size, color) {
+	var host = `${window.location.protocol === 'https:' ? 'wss' : 'ws' }://${window.location.host}`
+
+	let url = `${host}/${gameId}?p=${getUID()}`;
+
+	if (size) {
+		url = `${url}&s=${size}`
+	}
+
+	if (color) {
+		url = `${url}&c=${color}`
+	}
+
+	location.hash = `${gameId}`
+
+	return url
+}
+
+
+function start(gameId, size, color) {
+	document.getElementById('new-game').style.display = 'none';
+	document.getElementById('game').style.display = 'block';
+
+	// Init the goban
+	const goban = new Goban(document.getElementById('canvas'));
+
+	// Build the url
+	const url = gameURL(gameId, size, color);
+	// Connect the WebSocket
+	var ws = new WebSocket(url);
+	// Setup the message handler
+
+	ws.onmessage = function(event) {
+
+		const msg = JSON.parse(event.data)
+		// Process the first message differently
+		goban.reset(msg.size, msg.color, msg.history);
+		HISTORY_SLIDER.value = HISTORY_SLIDER.max = goban.turnsCount;
+		updatePointsAndTurn(goban);
+
+		// We are a player:
+		if (msg.color !== EMPTY) {
+			goban.onPut = (idx) => { ws.send(JSON.stringify(idx)); };
+
+			BTN_PASS.onclick = () => { ws.send(JSON.stringify(null)); };
+			BTN_PASS.disabled = !goban.canPass;
+		}
+
+		// Setup the interactivity of the slider
+		HISTORY_SLIDER.oninput = (e) => {
+			goban.goTo(parseInt(e.target.value))
+			updatePointsAndTurn(goban);
+			goban.isLive && (BTN_PASS.disabled = !goban.canPass);
+		}
+
+		ws.onmessage = function (event) {
+			const move = JSON.parse(event.data)
+			goban.push(move)
+			HISTORY_SLIDER.max = goban.turnsCount;
+
+			if (goban.canPass && move.length > 0) {
+				playSound.play()
+			}
+
+			if (goban.isLive) {
+				updatePointsAndTurn(goban);
+				HISTORY_SLIDER.value = goban.turnsCount;
+				BTN_PASS.disabled = !goban.canPass;
+			}
+		}
+	}
+
+	ws.onclose = () => {
+		console.log('closed');
+	}
+
+	ws.onerror = function(event) {
+		console.error(event)
+	}
+}
+
+function updatePointsAndTurn(goban) {
+	displayPoints(goban.points);
+	TURN_COUNTER.innerText = goban.turn;
+}
+
+function displayPoints([black_points, white_points]) {
+	document.getElementById('black').innerText = black_points;
+	document.getElementById('white').innerText = white_points;
+}
+
+
+if (location.hash == '') {
+	document.getElementById('new-game').style.display = 'block';
+} else {
+	start(location.hash.substring(1));
+}
+
+function connect() {
+	const size = document.querySelector('input[name="size"]:checked').value;
+	const color = document.querySelector('input[name="color"]:checked').value;
+	const gameId = makeId();
+
+	location.hash = gameId;
+	start(gameId, size, color);
+}
+
+// Utils
 
 function getUID() {
 	var uid = localStorage.getItem("go2go_uid");
@@ -373,85 +549,6 @@ function changeUID() {
 	if (newUID) {
     localStorage.setItem("go2go_uid", newUID)
 	}
-}
-function connect(gameId) {
-	document.getElementById('game').style.display = 'block';
-
-	const canvas = document.getElementById("canvas");
-	var goban = new Goban(canvas);
-
-	var url = `${window.location.protocol === 'https:' ? 'wss' : 'ws' }://${window.location.host}`
-
-	if (gameId) {
-		url = `${url}/${gameId}?p=${getUID()}`
-	} else {
-		const size = document.querySelector('input[name="size"]:checked').value;
-		const color = document.querySelector('input[name="color"]:checked').value;
-		document.getElementById('new-game').style.display = 'none';
-		gameId = makeId()
-		location.hash = `${gameId}`
-		url = `${url}/${gameId}?p=${getUID()}&c=${color}&s=${size}`
-	}
-
-	var ws = new WebSocket(url);
-	ws.binaryType = "arraybuffer";
-
-	goban.onPut = (idx) => {
-		const buffer = new ArrayBuffer(3);
-		var dv = new DataView(buffer)
-		dv.setUint8(0, goban.playing);
-		dv.setUint16(1, idx, true);
-		ws.send(dv)
-	}
-
-	BTN_PASS.onclick = () => {
-		if (goban.color === (goban.playing & 3)) {
-			const buffer = new ArrayBuffer(3);
-			var dv = new DataView(buffer)
-			dv.setUint8(0, goban.playing);
-			dv.setUint16(1, 1000, true);
-			ws.send(dv)
-		}
-	};
-
-	ws.onmessage = function(event) {
-		if (event.data instanceof ArrayBuffer) {
-
-			var dv = new DataView(event.data);
-
-			if (dv.byteLength === 1) {
-				// Set color
-				goban.color = dv.getUint8(0);
-				if (goban.color === EMPTY) {
-					BTN_PASS.style.display = 'none';
-				}
-			} else {
-				goban.setState(dv);
-				window.requestAnimationFrame(() => goban.draw() );
-
-				let [black_points, white_points] = goban.countPoints(dv)
-
-				document.getElementById('black').innerText = black_points;
-				document.getElementById('white').innerText = white_points;
-
-				BTN_PASS.style.display = goban.canPass ? 'inline-block' : 'none';
-			}
-		}
-	}
-
-	ws.onclose = () => {
-		console.log('closed');
-	}
-
-	ws.onerror = function(event) {
-		console.error(event)
-	}
-}
-
-if (location.hash == '') {
-	document.getElementById('new-game').style.display = 'block';
-} else {
-	connect(location.hash.substring(1))
 }
 
 
