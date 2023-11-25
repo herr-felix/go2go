@@ -43,7 +43,7 @@ export default {
         return new Response(HTML, {headers: {"Content-Type": "text/html;charset=UTF-8"}});
       }
 
-	  	return handleApiRequest(path[0], request, env);
+	  	return handleApiRequest(path[0].split('.')[0], request, env);
 
     });
   }
@@ -278,9 +278,7 @@ export class GoGame {
     return await handleErrors(request, async () => {
       const url = new URL(request.url);
 
-      let path = url.pathname.slice(1).split('/');
-
-			if (path.length == 2 && path[1] === 'sgf') {
+			if (url.pathname.endsWith('.sgf')) {
 				return new Response (await this.genSgf());
 			}
 
