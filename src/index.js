@@ -38,7 +38,7 @@ export default {
       let url = new URL(request.url);
       let path = url.pathname.slice(1).split('/');
 
-      if (!path[0]) {
+      if (!path[0] || !(path[0].endsWith('.sgf') || request.headers.get("Upgrade") == "websocket")) {
         // Serve our HTML at the root path.
         return new Response(HTML, {headers: {"Content-Type": "text/html;charset=UTF-8"}});
       }

@@ -453,8 +453,6 @@ function gameURL(gameId, size, color) {
 		url = `${url}&c=${color}`
 	}
 
-	location.hash = `${gameId}`
-
 	return url
 }
 
@@ -532,18 +530,18 @@ function displayPoints([black_points, white_points]) {
 }
 
 
-if (location.hash == '') {
+if (location.pathname === '/') {
 	document.getElementById('new-game').style.display = 'block';
 } else {
-	start(location.hash.substring(1));
+	start(location.pathname.slice(1));
 }
 
 function connect() {
-	const size = document.querySelector('input[name="size"]:checked').value;
-	const color = document.querySelector('input[name="color"]:checked').value;
+	const size = document.querySelector('input[name="size"]:checked')?.value;
+	const color = document.querySelector('input[name="color"]:checked')?.value;
 	const gameId = makeId();
 
-	location.hash = gameId;
+	window.history.pushState({},"", `/${gameId}`);
 	start(gameId, size, color);
 }
 
