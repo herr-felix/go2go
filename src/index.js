@@ -49,7 +49,6 @@ export default {
   }
 }
 
-
 async function handleApiRequest(name, request, env) {
 	if (name.length > 32) {
 		return new Response("Not found", {status: 404});
@@ -57,10 +56,7 @@ async function handleApiRequest(name, request, env) {
 
 	let gameObject = env.games.get(env.games.idFromName(name));
 
-	let newUrl = new URL(request.url);
-	newUrl.pathname = "/" + name
-
-	return gameObject.fetch(newUrl, request);
+	return gameObject.fetch(request.url, request);
 }
 
 
@@ -282,6 +278,13 @@ export class GoGame {
     return await handleErrors(request, async () => {
       const url = new URL(request.url);
 
+      let path = url.pathname.slice(1).split('/');
+
+			if (path.length == 2 && path[1] === 'sgf') {
+				return new Response (await this.genSgf());
+			}
+
+
 			if (request.headers.get("Upgrade") != "websocket") {
 				return new Response("expected websocket", {status: 400});
 			}
@@ -389,4 +392,26 @@ export class GoGame {
 		await this.state.storage.deleteAll();
 	}
 
+	async genSgf() {
+		const game = await this.state.storage.get('game')
+		if (game === undefined) {
+			throw new TypeError("No moves found");
+		}
+
+		const alpha = 'abcdefghijklmnopqrstuvwxyz';
+
+		const HEAD = `(;FF[5]GM[1]SZ[${game.lines}]\n`
+		const TAIL = '\n)'
+
+		const BODY = game.moves.map((move, i) => {
+			const color = i % 2 === 0 ? 'B' : 'W';
+			if (move.length === 1 || move.length === 2) {
+				return `${color}[${alpha[move[0] % game.lines]}${alpha[Math.floor(move[0] / game.lines)]}]`
+			} else {
+				return `${color}[]`
+			}
+		}).join(';')
+
+		return HEAD + BODY + TAIL;
+	}
 }
