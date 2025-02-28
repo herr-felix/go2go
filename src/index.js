@@ -10,8 +10,6 @@ const RIGHT = 2;
 const DOWN = 3;
 const LEFT = 4;
 
-const PASS_FLAG = 0x80;
-
 const directions = [UP,RIGHT,DOWN,LEFT]
 
 async function handleErrors(request, func) {
@@ -127,20 +125,30 @@ class Goban {
 		this.game.board[idx] = color;
 	}
 
-	async isRepeated(history) {
-		const board = new Uint8Array(this.game.board)
-		let stoneCount = board.reduce((count, color) => color && count + 1 || count, 0);
-		let boardChecksum = new BigUint64Array(await crypto.subtle.digest({name: 'SHA-256'}, board))
+	isRepeated(history) {
 
-		let statesWithCount = history[stoneCount];
-		// Have we ever had this stone count?
-		if (statesWithCount) {
-			if (statesWithCount.some(x => x.every((b, i) => b === boardChecksum[i]))) {
-				throw new TypeError("The board cannot repeat a previous state.");
-			}
-			statesWithCount.push(boardChecksum)
-		} else {
-			history[stoneCount] = [boardChecksum]
+		var pos = [0, 0]
+
+		for (let i = history.length - 1; i >=0 ; i--) {
+
+				var turn = history[i];
+
+				if (turn.length > 0) {
+			    pos[0] += 2**turn[0]
+
+			    if (turn.length > 1) {
+				    for (const kill of turn[1]) {
+				        pos[1] -= 2**kill
+		      	}
+	      	}
+      	}
+
+      	// Swap
+		    [pos[0], pos[1]] = [pos[1], pos[0]]
+
+		    if (pos[0] == 0 && pos[1] == 0) {
+						throw new TypeError("The board cannot repeat a previous state")
+				}
 		}
 	}
 
@@ -289,7 +297,7 @@ export class GoGame {
 
 			const pid = (new URLSearchParams(url.search)).get('p')
 
-			let game = (await this.state.storage.get('game')) || {history: [], moves: [], board: []};
+			let game = (await this.state.storage.get('game')) || {moves: [], board: []};
 			const canPlay = pid && pid !== game.black && pid !== game.white;
 
 			let pair = new WebSocketPair();
@@ -349,11 +357,13 @@ export class GoGame {
 
 				if (goban.gameIsOver) {
 					game.moves.pop();
-				} else if (move.length > 0 && move.length !== 4) { // Only check if we didn't pass
-					// Check for state repetition
-					await goban.isRepeated(game.history);
 				}
 				game.moves.push(move);
+				
+				if (!goban.gameIsOver && move.length > 0 && move.length !== 4) { // Only check if we didn't pass
+					// Check for state repetition
+					goban.isRepeated(game.moves); // Raise an error if state repeat
+				}
 
 				await this.state.storage.put("game", game);
 				this.broadcast(JSON.stringify(move));
